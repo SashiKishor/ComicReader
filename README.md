@@ -1,60 +1,73 @@
-# ComicFlix - Local-First Digital Comic & PDF Reader
+# ComicReader - Local-First Digital Comic (.cbr, .cbz) & PDF Reader
 
-ComicFlix is a high-performance, local-first, offline Windows desktop application built with **C# / WPF (.NET 8)** adhering strictly to the **MVVM (Model-View-ViewModel)** architectural pattern. It delivers a **Netflix-style library browsing interface** with horizontal category shelves mapped from subfolders, dynamic first-page cover extraction with SHA-256 disk caching, and a smooth, full-screen comic reading experience with page slide animations.
+[![.NET 8.0](https://img.shields.io/badge/.NET-8.0-512BD4?logo=dotnet)](https://dotnet.microsoft.com/)
+[![WPF](https://img.shields.io/badge/UI-WPF-0078D7?logo=windows)](https://docs.microsoft.com/en-us/dotnet/desktop/wpf/)
+[![MVVM](https://img.shields.io/badge/Architecture-Strict%20MVVM-brightgreen)](https://learn.microsoft.com/en-us/dotnet/communitytoolkit/mvvm/)
+[![Platform](https://img.shields.io/badge/Platform-Windows%2010%20%2F%2011%20(x64)-blue)](https://www.microsoft.com/windows)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+
+**ComicReader** is a high-performance, local-first, offline Windows desktop application built with **C# / WPF (.NET 8)** adhering strictly to the **MVVM (Model-View-ViewModel)** architectural pattern. It delivers a **Netflix-styled library browsing interface** with hierarchical subfolder drill-down navigation, dynamic folder cover art peeking, a database-free reading progress tracking engine, and a fluid, immersive full-screen reader with auto-hiding controls and multi-axis mouse drag panning.
 
 ---
 
 ## Table of Contents
-1. [Architectural Overview](#architectural-overview)
-2. [Directory Structure](#directory-structure)
-3. [Deep Dive into Code Components](#deep-dive-into-code-components)
-   - [Configuration Layer](#1-configuration-layer)
-   - [Domain Models](#2-domain-models)
-   - [Services (The Core Engine)](#3-services-the-core-engine)
-   - [ViewModels (Presentation Logic)](#4-viewmodels-presentation-logic)
-   - [Views (The Netflix UI)](#5-views-the-netflix-ui)
-   - [Value Converters & Utilities](#6-value-converters--utilities)
-   - [Application Shell & Dependency Injection](#7-application-shell--dependency-injection)
-4. [Data & Execution Flows](#data--execution-flows)
-   - [Directory Scanning & Cover Generation Flow](#directory-scanning--cover-generation-flow)
-   - [Comic Reading & Navigation Flow](#comic-reading--navigation-flow)
+1. [Key Features](#key-features)
+2. [Architectural Overview](#architectural-overview)
+3. [Directory Structure](#directory-structure)
+4. [Component Deep Dive](#component-deep-dive)
+   - [Polymorphic Library Engine](#1-polymorphic-library-engine)
+   - [Document Extraction & Stream Safety](#2-document-extraction--stream-safety)
+   - [Database-Free Progress Tracking](#3-database-free-progress-tracking)
+   - [Cinematic Loading & Page Transitions](#4-cinematic-loading--page-transitions)
+   - [Immersive Auto-Hiding Reader & Multi-Axis Viewport](#5-immersive-auto-hiding-reader--multi-axis-viewport)
 5. [Keyboard & Mouse Shortcuts](#keyboard--mouse-shortcuts)
-6. [Building and Running](#building-and-running)
+6. [Building & Running](#building--running)
+7. [Publishing for Release](#publishing-for-release)
+
+---
+
+## Key Features
+
+- **Hierarchical Folder Navigation & Polymorphic Grid**: Displays subfolders and comic files side-by-side in a unified card grid. Click into any folder to drill down, complete with breadcrumbs and "Back to Parent Folder" navigation.
+- **Dynamic Folder Cover Peeking**: Automatically peeks inside subfolders to discover the first nested comic and renders its cover art as the folder's poster card, tagged with a distinctive blue `📁 FOLDER` badge and item count.
+- **Smart Reading Progress & Auto-Resume**: Remembers the exact last-read page for every comic using a lightweight, debounced JSON store in `AppData\Local\ComicReader`. Opening any comic instantly resumes where you left off.
+- **Netflix-Style Visual Progress Bar**: Comic cards display a slim, flush red progress bar along their bottom edge indicating read completion percentage.
+- **Cinematic Frosted Glass Loading Screen**: When opening a comic, a brief cinematic loading screen appears with a 50px Gaussian blurred cover art background, deep dark tint, 360-degree sweeping accent ring, and pulsing breathing pod that smoothly fades out via a DoubleAnimation Storyboard.
+- **Immersive Full-Screen Reader with Auto-Hiding Controls**: Comic pages occupy the full window on a pitch-black canvas. The top header and bottom scrubber bar float above the image and remain hidden (`Opacity="0"`) until the mouse enters the top 60px or bottom 90px trigger zones, fading in and out smoothly.
+- **Multi-Axis Scrolling & Mouse Drag Panning**: Full support for zoomed-in pages using `LayoutTransform` layout scaling. Click and drag the page with your mouse (`Hand` / `SizeAll` cursor) to pan naturally across both axes. Supports `Ctrl + Mouse Wheel` for zoom and `Shift + Mouse Wheel` for horizontal scrolling.
+- **Page Transition Scroll Reset (No "Sticky Scroll")**: Switching pages instantly snaps the scroll viewport back to `(0, 0)` so new pages always start at the top-left corner.
+- **Scrubber Slider with Drag-Completed Loading**: The scrubber is strictly bounded to `[1, TotalPages]`. Dragging the handle updates the page counter in real time without lagging the UI; page extraction triggers cleanly only when the user releases the slider handle.
+- **Stream-Safe Archive & PDF Decoding**: Fully isolates ZIP/CBZ decompressor streams into rewound in-memory buffers before decoding with `BitmapCacheOption.OnLoad` and `.Freeze()`. Filters out non-image files (`ComicInfo.xml`, `thumbs.db`, directories, and macOS metadata).
+- **Seamless Dark Window Chrome**: Client area extends directly into the Windows title bar with styled dark caption buttons, custom desktop icon (`Assets/app.ico`), and no title text or window frame borders.
+- **Layered User Configuration**: Clean default `appsettings.json` bundled with the application; user directory selections and overrides are stored safely in `%LocalAppData%\ComicReader\usersettings.json`.
 
 ---
 
 ## Architectural Overview
 
-The application is structured according to clean architecture and separation of concerns:
-
-- **Config-Driven & Persistent**: Hardcodes zero business rules, UI colors, cache paths, or extensions. The user's selected library directory is permanently saved and reloaded automatically on future startups.
-- **First-Time Startup Onboarding**: On first launch, guides the user with a setup screen to choose their comic root folder. Once selected, it is remembered forever.
-- **Local-First & Completely Offline**: No network dependencies at runtime. Operates purely against the local filesystem.
-- **Strict MVVM Pattern**: Views contain zero business logic. ViewModels expose reactive state and commands using `CommunityToolkit.Mvvm`.
-- **Thread Safety & UI Fluidity**: Heavy operations (directory recursion, archive decompression, PDFium rasterization, thumbnail downscaling) execute on background threads via `Task.Run` with `SemaphoreSlim` concurrency throttling.
-- **Natural Alphanumeric Sorting**: Uses Windows native `StrCmpLogicalW` so filenames sort naturally (`Issue 1`, `Issue 2`, `Issue 10`).
-
 ```
 ┌─────────────────────────────────────────────────────────────┐
 │                         Views (XAML)                        │
-│   MainWindow.xaml   │   LibraryView.xaml   │   ReaderView   │
+│   MainWindow.xaml   │   LibraryView.xaml   │ ReaderView.xaml│
+│   StartupView.xaml  │   WindowChrome       │ Storyboards    │
 └──────────────────────────────┬──────────────────────────────┘
-                               │ Data Binding & Commands
+                               │ Data Binding & RelayCommands
 ┌──────────────────────────────▼──────────────────────────────┐
 │                      ViewModels (MVVM)                      │
 │   MainViewModel     │   LibraryViewModel   │ ReaderViewModel│
-│   ComicCategoryViewModel                   │ ComicCardVM    │
+│   StartupViewModel  │   FolderItemVM       │ ComicItemVM    │
 └──────────────────────────────┬──────────────────────────────┘
-                               │ Injected Interfaces
+                               │ Injected Service Contracts
 ┌──────────────────────────────▼──────────────────────────────┐
 │                    Services (Core Engine)                   │
 │   LibraryScannerService │ CoverExtractorService │ CacheSvc  │
-│   ComicDocumentService  │ ConfigurationService  │           │
+│   ComicDocumentService  │ ProgressTrackingSvc   │ ConfigSvc │
 └──────────────────────────────┬──────────────────────────────┘
-                               │ Decompression & Rasterization
+                               │ Native Decoders & Archives
 ┌──────────────────────────────▼──────────────────────────────┐
 │               Native / Third-Party Engines                  │
-│       SharpCompress (CBR/CBZ)   │   Docnet.Core (PDFium)    │
+│       System.IO.Compression (CBZ) │ SharpCompress (CBR)     │
+│       Docnet.Core / PDFium (PDF)  │ Windows StrCmpLogicalW  │
 └─────────────────────────────────────────────────────────────┘
 ```
 
@@ -64,324 +77,155 @@ The application is structured according to clean architecture and separation of 
 
 ```
 ComicReader/
-├── comic_reader.csproj                     # .NET 8 Windows Desktop project file
-├── appsettings.json                        # Central configuration file
+├── comic_reader.csproj                     # .NET 8 WPF project file (win-x64)
+├── appsettings.json                        # Central configuration defaults
+├── .gitignore                              # Production .NET / WPF gitignore
 ├── App.xaml                                # Application styles, brushes & converters
 ├── App.xaml.cs                             # Composition root & ServiceProvider setup
-├── README.md                               # Codebase documentation (this file)
-├── REQUIREMENTS.md                         # Detailed functional/system specifications
+├── AssemblyInfo.cs                         # WPF theme dictionary mapping
+├── README.md                               # Project documentation
+├── requirements.txt                        # Requirements & dependencies specification
+│
+├── Assets/                                 # Visual brand assets
+│   └── app.ico                             # Multi-resolution application icon
 │
 ├── Config/                                 # Strongly-typed configuration objects
 │   ├── AppSettings.cs                      # Root settings aggregator
-│   ├── LibrarySettings.cs                  # File extensions, parallelism, thumbnail bounds
-│   ├── CacheSettings.cs                    # Cache directory and storage limits
+│   ├── LibrarySettings.cs                  # File extensions, concurrency, thumbnail bounds
+│   ├── CacheSettings.cs                    # LocalAppData cache paths and limits
 │   ├── ReaderSettings.cs                   # Animation durations and default fit modes
-│   └── ThemeSettings.cs                    # Netflix dark theme palette
+│   └── ThemeSettings.cs                    # Dark theme palette definition
 │
-├── Models/                                 # Pure domain entities
-│   ├── ComicBook.cs                        # Comic metadata (title, path, size, cover)
+├── Models/                                 # Pure domain entities & contracts
+│   ├── ILibraryNode.cs                     # Base interface for polymorphic library grid items
+│   ├── ComicBook.cs                        # Comic metadata (title, path, size, cover cache)
 │   ├── ComicCategory.cs                    # Folder category grouping books
-│   ├── ComicPage.cs                        # Decoded page bitmap & dimensions
-│   └── PageFitMode.cs                      # Enum: FitToScreen, FitToWidth, FitToHeight, Original
+│   ├── ComicPage.cs                        # Decoded page bitmap, dimensions & entry key
+│   ├── PageFitMode.cs                      # FitToScreen, FitToWidth, FitToHeight, OriginalSize
+│   └── ReadingProgressEntry.cs             # Persisted read page index & total page count
 │
-├── Services/                               # Business logic & I/O engine
+├── Services/                               # Business logic & I/O engines
 │   ├── Interfaces/
-│   │   ├── IConfigurationService.cs        # Config provider contract
-│   │   ├── ICacheService.cs                # Deterministic disk cache contract
+│   │   ├── IConfigurationService.cs        # Layered config provider contract
+│   │   ├── ICacheService.cs                # SHA-256 disk cache contract
 │   │   ├── ICoverExtractorService.cs       # Cover extraction contract (.cbr, .cbz, .pdf)
-│   │   ├── IComicDocumentService.cs        # Multi-page document navigation contract
-│   │   └── ILibraryScannerService.cs       # Directory recursion contract
-│   ├── ConfigurationService.cs             # Reads appsettings.json via Microsoft.Extensions
-│   ├── CacheService.cs                     # SHA-256 metadata-keyed disk cache
-│   ├── CoverExtractorService.cs            # SharpCompress & PDFium cover extractor
-│   ├── ComicDocumentService.cs             # Thread-safe multi-page document loader
-│   └── LibraryScannerService.cs            # Subfolder hierarchy mapper
+│   │   ├── IComicDocumentService.cs        # Multi-page archive and PDF loader contract
+│   │   ├── ILibraryScannerService.cs       # Hierarchical directory discovery contract
+│   │   └── IProgressTrackingService.cs     # Debounced progress tracking contract
+│   ├── ConfigurationService.cs             # Reads appsettings.json and layers usersettings.json
+│   ├── CacheService.cs                     # Deterministic SHA-256 disk cover cache
+│   ├── CoverExtractorService.cs            # First-page thumbnail extractor with peeking
+│   ├── ComicDocumentService.cs             # Thread-safe CBZ/CBR/PDF page decoder
+│   ├── LibraryScannerService.cs            # Hierarchical directory scanner with folder peeking
+│   └── ProgressTrackingService.cs          # Debounced JSON progress store with atomic writes
 │
-├── ViewModels/                             # CommunityToolkit.Mvvm presentation logic
-│   ├── BaseViewModel.cs                    # (ObservableObject base)
-│   ├── ComicCardViewModel.cs               # Individual comic poster card state
-│   ├── ComicCategoryViewModel.cs           # Shelf row ViewModel
-│   ├── LibraryViewModel.cs                 # Catalog browsing, scanning & search
-│   ├── ReaderViewModel.cs                  # Fullscreen reader, zoom, fit & navigation
-│   └── MainViewModel.cs                    # Shell navigation coordinator
+├── Utilities/                              # Helpers & Comparers
+│   ├── BitmapHelper.cs                     # Stream-isolated, frozen WPF BitmapImage builder
+│   └── NaturalStringComparer.cs            # Windows StrCmpLogicalW natural alphanumeric sorting
 │
-├── Views/                                  # WPF XAML presentation layer
-│   ├── MainWindow.xaml                     # Shell window hosting Library and Reader
-│   ├── MainWindow.xaml.cs                  # Shell code-behind
-│   ├── LibraryView.xaml                    # Netflix-style shelf browser
-│   ├── LibraryView.xaml.cs                 # LibraryView code-behind
-│   ├── ReaderView.xaml                     # Fullscreen comic viewer with slide animations
-│   └── ReaderView.xaml.cs                  # Keyboard navigation & animation code-behind
+├── ViewModels/                             # Presentation logic (CommunityToolkit.Mvvm)
+│   ├── MainViewModel.cs                    # Root navigation router (Startup -> Library -> Reader)
+│   ├── StartupViewModel.cs                 # First-time onboarding & folder picker
+│   ├── LibraryViewModel.cs                 # Hierarchical grid, drill-down & progress refresh
+│   ├── FolderItemViewModel.cs              # Navigable folder node with peeked cover art
+│   ├── ComicItemViewModel.cs               # Document file node with progress percentage
+│   ├── ReaderViewModel.cs                  # Full-screen viewing, preloading & scrubber logic
+│   ├── ComicCardViewModel.cs               # Card presentation helper
+│   └── ComicCategoryViewModel.cs           # Category shelf helper
 │
-├── Converters/                             # Value converters for XAML bindings
-│   ├── ByteArrayToBitmapConverter.cs       # Converts byte[] image to frozen BitmapImage
-│   ├── FitModeToBooleanConverter.cs        # Maps PageFitMode enum to RadioButton IsChecked
-│   ├── InverseBooleanToVisibilityConverter.cs # Inverts bool to Visibility
-│   └── NullToVisibilityConverter.cs        # Maps null/empty to Visibility
-│
-└── Utilities/
-    └── NaturalStringComparer.cs            # P/Invoke StrCmpLogicalW natural sorting
+└── Views/                                  # WPF XAML views
+    ├── MainWindow.xaml                     # Borderless dark WindowChrome shell
+    ├── MainWindow.xaml.cs                  # Caption button event routing
+    ├── StartupView.xaml                    # First-launch welcome & onboarding UI
+    ├── LibraryView.xaml                    # Hierarchical grid with polymorphic DataTemplates
+    ├── ReaderView.xaml                     # Full-screen reader with auto-hide hover controls
+    └── ReaderView.xaml.cs                  # Panning, mouse gestures & keyboard shortcuts
 ```
 
 ---
 
-## Deep Dive into Code Components
+## Component Deep Dive
 
-### 1. Configuration Layer
+### 1. Polymorphic Library Engine
+- **`ILibraryNode` Contract**: Both `FolderItemViewModel` and `ComicItemViewModel` implement `ILibraryNode`.
+- **Hierarchical Scanning (`LibraryScannerService`)**: When scanning a folder, immediate subfolders and comics are discovered side-by-side. The scanner peeks 1 level deep inside subfolders to find the first comic and extracts its cover for the folder card.
+- **DataTemplates**: `LibraryView.xaml` uses polymorphic XAML `DataTemplate` resources mapped to `vm:FolderItemViewModel` (blue folder badge, item count) and `vm:ComicItemViewModel` (red format badge, file size, Netflix progress bar).
 
-#### `appsettings.json`
-Acts as the single source of truth for runtime configuration:
-- `Library.SupportedExtensions`: Configurable array (`[".cbr", ".cbz", ".pdf"]`).
-- `Library.MaxDegreeOfParallelism`: Concurrency cap for background thumbnail extraction.
-- `Library.ThumbnailMaxWidth` & `ThumbnailMaxHeight`: 360x540 bounding box (maintaining a 2:3 poster aspect ratio).
-- `Cache.CacheDirectory`: Resolves environment variables (`%LocalAppData%\ComicReader\Cache\Covers`).
-- `Reader.PageAnimationDurationMs`: Duration (250ms) for page slide animations.
-- `Theme`: Hex codes for the Netflix dark palette (`#141414` primary, `#E50914` Netflix red accent).
+### 2. Document Extraction & Stream Safety
+- **Native ZIP / CBZ**: Uses .NET's built-in `System.IO.Compression.ZipArchive`. Strictly filters out non-image files (`ComicInfo.xml`, `thumbs.db`), directories, and macOS metadata (`__MACOSX`, `._*`).
+- **Stream Isolation**: SharpCompress and ZipArchive return non-seekable decompressor streams. `BitmapHelper.CreateImageSourceFromStream` copies bytes into an isolated `MemoryStream`, rewinds `Position = 0`, decodes with `BitmapCacheOption.OnLoad`, and calls `.Freeze()` before stream disposal.
+- **PDFium Rasterization**: DocLib rasterizes PDF pages with an explicit `PageDimensions(1.5)` scaling factor directly into frozen 32-bit `Bgra32` bitmap buffers.
 
-#### `Config/AppSettings.cs` & Subclasses
-Plain C# classes bound by `ConfigurationService` using `Microsoft.Extensions.Configuration.Binder`.
+### 3. Database-Free Progress Tracking
+- **Persistence Path**: Stored in `%LocalAppData%\ComicReader\reading_progress.json`.
+- **Performance**: In-memory dictionary provides 0ms lookups during library rendering.
+- **Debounced Disk Writes**: Updates during rapid page turning are debounced over 500ms and written atomically via temporary file replacement (`File.Move(..., overwrite: true)`).
 
----
+### 4. Cinematic Loading & Page Transitions
+- **Cover Frosted Glass**: The loading screen binds `CoverImageSource` with a 50px Gaussian blur and dark tint.
+- **Continuous Animations**: Outer sweeping ring (360° rotation) and inner breathing pod (scale pulsing) run via XAML Storyboards.
+- **Decoupled Page Turns**: Page turns slide smoothly using `RenderTransform` translation without re-triggering layout recalculation.
 
-### 2. Domain Models
-
-- **`ComicBook`**: Represents a file on disk. Holds `Title`, `FilePath`, `FileSizeBytes`, `LastModifiedUtc`, `CategoryName`, `RelativeSubfolder`, and `CoverCachePath`.
-- **`ComicCategory`**: Represents a shelf/row. Contains a `Name` (e.g., `"Marvel / Spider-Man"`), `RelativePath`, and an `ObservableCollection<ComicBook>`.
-- **`ComicPage`**: Represents an individual decoded comic page. Holds `PageIndex`, `PageNumber`, `ImageData` (`byte[]`), `PixelWidth`, and `PixelHeight`.
-- **`PageFitMode`**: Enum defining sizing behavior:
-  - `FitToScreen`: Uniform scale within current viewport.
-  - `FitToWidth`: Scales to viewport width, enabling vertical scrolling for tall pages or webtoons.
-  - `FitToHeight`: Scales to viewport height.
-  - `OriginalSize`: 1:1 pixel rendering with dual scrollbars.
-
----
-
-### 3. Services (The Core Engine)
-
-#### `CacheService.cs` (`ICacheService`)
-- **Key Generation**: Uses `SHA256.HashData` over `${filePath.ToUpper()}|${lastModifiedTicks}|${fileLength}`. This guarantees that:
-  1. The key is deterministic and safe for Windows filenames.
-  2. If the user updates or replaces a comic file, the hash changes automatically and re-extracts the cover.
-- **Atomic Disk Writes**: Writes new covers to `.tmp` files first, then performs `File.Move(temp, target, overwrite: true)` to prevent corrupted or half-written thumbnail files.
-
-#### `CoverExtractorService.cs` (`ICoverExtractorService`)
-Dynamically creates poster thumbnails for the Netflix view:
-- **For Archives (`.cbr`, `.cbz`)**:
-  - Uses `SharpCompress.Archives.ArchiveFactory.Open(filePath)`.
-  - Filters non-directory entries matching image extensions (`.jpg`, `.jpeg`, `.png`, `.webp`, `.bmp`).
-  - Sorts entry keys naturally via `NaturalStringComparer.Instance`.
-  - Extracts the first entry stream into memory.
-- **For PDFs (`.pdf`)**:
-  - Uses `DocLib.Instance.GetDocReader(filePath, new PageDimensions(width, height))`.
-  - Reads page 0 via `GetPageReader(0)`.
-  - Retrieves raw BGRA pixels and constructs a `BitmapSource.Create(..., PixelFormats.Bgra32, ...)`.
-  - Encodes the rasterized page to JPEG via `JpegBitmapEncoder`.
-- **Thumbnail Optimization**: If the source cover image exceeds 360x540, scales it down proportionally via WPF `TransformedBitmap` to conserve memory and disk cache space.
-
-#### `ComicDocumentService.cs` (`IComicDocumentService`)
-Manages open multi-page archives or PDF documents:
-- Thread-safe access via `SemaphoreSlim(1, 1)`.
-- `OpenDocumentAsync(filePath)`: Detects whether the file is a PDF or archive, opens the reader instance, indexes all page entries, and returns total page count.
-- `LoadPageAsync(pageIndex)`: Reads the specific page entry on demand, avoiding decoding the entire book into memory.
-- `CloseDocument()`: Cleanly disposes native PDFium handles and archive streams.
-
-#### `LibraryScannerService.cs` (`ILibraryScannerService`)
-- Recursively traverses the root folder with `DirectoryInfo.EnumerateFiles("*.*", SearchOption.AllDirectories)`.
-- Filters files against `SupportedExtensions`.
-- Calculates relative subfolder paths using `Path.GetRelativePath(rootDirectory, file.DirectoryName)`.
-- Root files are assigned to the primary root category.
-- Subfolder files are assigned to breadcrumb categories (e.g. `DC Comics / Batman / Year One`).
-- Sorts categories and files with natural ordering.
-
----
-
-### 4. ViewModels (Presentation Logic)
-
-#### `ComicCardViewModel.cs`
-- Wraps an individual `ComicBook`.
-- Exposes `Title`, `CoverPath`, `ExtensionBadge` (`CBR`, `PDF`), and `FileSizeFormatted`.
-- `LoadCoverAsync`: Asynchronously calls `CoverExtractorService.GetOrCreateCoverAsync` and assigns `CoverPath`.
-
-#### `LibraryViewModel.cs`
-- Drives the library browser.
-- Commands: `BrowseFolderCommand` (launches `OpenFolderDialog`), `RefreshCommand`, `OpenComicCommand`.
-- **Concurrency Throttling**: After discovering comics, queues cover extraction across a `SemaphoreSlim` initialized with `MaxDegreeOfParallelism` (default: 4). This prevents disk thrashing and keeps the UI at 60 FPS while covers populate asynchronously.
-
-#### `ReaderViewModel.cs`
-- Controls the full-screen reader.
-- Exposes `CurrentPageImageData`, `CurrentPageIndex`, `TotalPages`, `FitMode`, and `ZoomFactor`.
-- Commands: `NextPageCommand`, `PreviousPageCommand`, `GoToPageCommand`, `SetFitModeCommand`, `ZoomInCommand`, `ZoomOutCommand`, `ResetZoomCommand`, `CloseReaderCommand`.
-- Dispatches `CloseRequested` event back to `MainViewModel`.
-
-#### `MainViewModel.cs`
-- Coordinates navigation state between `LibraryViewModel` and `ReaderViewModel`.
-- When a comic is selected in `LibraryViewModel`, activates `IsReaderActive = true` and opens the comic in `ReaderViewModel`.
-- When reader closes, switches back to `IsReaderActive = false`.
-
----
-
-### 5. Views (The Netflix UI)
-
-#### Theme Palette & Styling (`App.xaml`)
-- Dark charcoal canvas (`#141414`).
-- Elevated card surface (`#232323`).
-- Netflix red accent (`#E50914`, hover `#F40612`).
-- Ultra-thin custom dark scrollbars (`MinimalistThumb`) with red drag highlight.
-
-#### Library View (`Views/LibraryView.xaml`)
-- **Top Navigation Bar**: Brand logo, active directory path, and folder selector.
-- **Category Shelves**: Nested `ItemsControl` displaying category headers with count badges, and horizontally scrolling rows of 2:3 comic cards (`170x255`).
-- **Interactive Poster Cards**:
-  - Image element with `RenderOptions.BitmapScalingMode="HighQuality"`.
-  - Format badge (`CBR` / `PDF`) in top right.
-  - Dark gradient overlay on bottom with two-line title truncation and file size.
-  - Hover trigger: 2px Netflix red border and elevated background.
-
-#### Reader View (`Views/ReaderView.xaml` & `.xaml.cs`)
-- **Pitch Black Canvas (`#0A0A0A`)**: Full immersion with centered page host.
-- **Smooth Page Slide Animation**: In `ReaderView.xaml.cs`, whenever `CurrentPageIndex` changes, triggers a `DoubleAnimation` on `TranslateTransform.X` with `QuarticEase`:
-  - Forward: Slides in smoothly from +60px to 0.
-  - Backward: Slides in smoothly from -60px to 0.
-- **Clickable Edge Zones**: Semi-transparent hover chevrons on the left 120px (Previous) and right 120px (Next) of the screen.
-- **Floating Controls**: Auto-hiding semi-transparent pill bars for header navigation (Fit mode toggles, Zoom +/-) and bottom page scrubbing (Slider, page count badge).
-
----
-
-### 6. Value Converters & Utilities
-
-- **`ByteArrayToBitmapConverter`**: Decodes `byte[]` to a frozen `BitmapImage` with `BitmapCacheOption.OnLoad` so background memory streams can be garbage-collected immediately.
-- **`FitModeToBooleanConverter`**: Two-way converter binding `PageFitMode` enum values to XAML `RadioButton.IsChecked`.
-- **`NaturalStringComparer`**: P/Invokes Windows `shlwapi.dll!StrCmpLogicalW`. Sorts entries like `1.jpg`, `2.jpg`, `10.jpg` instead of alphabetical `1.jpg`, `10.jpg`, `2.jpg`.
-
----
-
-### 7. Application Shell & Dependency Injection
-
-#### `App.xaml.cs`
-Configures Microsoft Dependency Injection container:
-```csharp
-private static void ConfigureServices(IServiceCollection services)
-{
-    // Services
-    services.AddSingleton<IConfigurationService, ConfigurationService>();
-    services.AddSingleton<ICacheService, CacheService>();
-    services.AddSingleton<ICoverExtractorService, CoverExtractorService>();
-    services.AddTransient<IComicDocumentService, ComicDocumentService>();
-    services.AddSingleton<ILibraryScannerService, LibraryScannerService>();
-
-    // ViewModels
-    services.AddSingleton<LibraryViewModel>();
-    services.AddSingleton<ReaderViewModel>();
-    services.AddSingleton<MainViewModel>();
-
-    // Views
-    services.AddTransient<MainWindow>();
-}
-```
-
----
-
-## Data & Execution Flows
-
-### Directory Scanning & Cover Generation Flow
-
-```mermaid
-sequenceDiagram
-    autonumber
-    actor User
-    participant LibraryView
-    participant LibraryViewModel
-    participant LibraryScannerService
-    participant CoverExtractorService
-    participant CacheService
-    participant Disk
-
-    User->>LibraryView: Click "Select Folder"
-    LibraryView->>LibraryViewModel: BrowseFolderCommand
-    LibraryViewModel->>LibraryScannerService: ScanDirectoryAsync(rootPath)
-    LibraryScannerService->>Disk: EnumerateFiles (.cbr, .cbz, .pdf)
-    LibraryScannerService-->>LibraryViewModel: List of ComicCategory
-    LibraryViewModel->>LibraryView: Update Categories & Cards (instant UI render)
-
-    loop Concurrently (Throttled by SemaphoreSlim)
-        LibraryViewModel->>CoverExtractorService: GetOrCreateCoverAsync(comicPath)
-        CoverExtractorService->>CacheService: HasCachedCover(hashKey)
-        alt Cache Hit
-            CacheService-->>CoverExtractorService: Cached image path
-        else Cache Miss
-            CoverExtractorService->>Disk: Extract Page 1 (SharpCompress / PDFium)
-            CoverExtractorService->>CacheService: SaveCoverToCacheAsync(imageBytes)
-            CacheService->>Disk: Write atomic file to %LocalAppData%
-        end
-        CoverExtractorService-->>LibraryViewModel: Return CoverImagePath
-        LibraryViewModel->>LibraryView: Notify PropertyChanged(CoverPath)
-    end
-```
-
-### Comic Reading & Navigation Flow
-
-```mermaid
-sequenceDiagram
-    autonumber
-    actor User
-    participant LibraryView
-    participant MainViewModel
-    participant ReaderViewModel
-    participant ComicDocumentService
-    participant ReaderView
-
-    User->>LibraryView: Click Comic Poster Card
-    LibraryView->>MainViewModel: ComicSelected(ComicBook)
-    MainViewModel->>ReaderViewModel: OpenComicAsync(book)
-    MainViewModel->>MainViewModel: Set IsReaderActive = True
-    ReaderViewModel->>ComicDocumentService: OpenDocumentAsync(filePath)
-    ComicDocumentService-->>ReaderViewModel: TotalPages count
-    ReaderViewModel->>ComicDocumentService: LoadPageAsync(0)
-    ComicDocumentService-->>ReaderViewModel: ComicPage (byte[] ImageData)
-    ReaderViewModel-->>ReaderView: Bind CurrentPageImageData
-    ReaderView->>ReaderView: Trigger QuarticEase Slide Animation
-
-    User->>ReaderView: Press Right Arrow / Click Next
-    ReaderView->>ReaderViewModel: NextPageCommand
-    ReaderViewModel->>ComicDocumentService: LoadPageAsync(pageIndex + 1)
-    ComicDocumentService-->>ReaderViewModel: ComicPage
-    ReaderViewModel-->>ReaderView: Update Page & Counter Text
-```
+### 5. Immersive Auto-Hiding Reader & Multi-Axis Viewport
+- **Pure XAML Auto-Hide**: Top header and bottom footer default to `Opacity="0.0"`. `DataTrigger` bindings on `IsMouseOver` of the 60px/90px trigger zones smoothly animate opacity in (200ms) and out (250ms).
+- **LayoutTransform Scaling**: The comic image scales via `Border.LayoutTransform`, causing the `ScrollViewer`'s extent to expand naturally so horizontal scrollbars appear when zoomed in.
+- **Mouse Drag Panning**: Clicking and dragging on zoomed-in pages captures the mouse and scrolls across both axes with responsive cursor feedback (`Hand` / `SizeAll`).
 
 ---
 
 ## Keyboard & Mouse Shortcuts
 
-| Key / Input | Action |
+| Input | Action |
 | :--- | :--- |
-| `Right Arrow` / `Space` / `Page Down` | Next Page |
-| `Left Arrow` / `Shift + Space` / `Page Up` / `Backspace` | Previous Page |
-| `Home` | First Page |
-| `End` | Last Page |
-| `Escape` | Exit Reader (Return to Netflix Library) |
-| `H` | Toggle Floating Controls Overlay |
-| `Left Screen Click` | Previous Page |
-| `Right Screen Click` | Next Page |
+| **Right Arrow** / **Page Down** / **Spacebar** | Next Page |
+| **Left Arrow** / **Page Up** / **Backspace** / **Shift + Space** | Previous Page |
+| **Home** | First Page |
+| **End** | Last Page |
+| **Escape** | Exit Reader (Return to Library) |
+| **Click & Drag** | Pan around page when zoomed in |
+| **Ctrl + Mouse Wheel Up** | Zoom In |
+| **Ctrl + Mouse Wheel Down** | Zoom Out |
+| **Shift + Mouse Wheel** | Horizontal Scroll Left / Right |
+| **Mouse Hover (Top / Bottom)** | Reveal Header / Scrubber Controls |
 
 ---
 
-## Building and Running
+## Building & Running
 
 ### Prerequisites
-- Windows 10 (Build 19041+) or Windows 11 (64-bit)
-- [.NET 8.0 SDK](https://dotnet.microsoft.com/download/dotnet/8.0)
+- Windows 10 (Version 2004+) or Windows 11 (64-bit)
+- Microsoft [.NET 8.0 SDK](https://dotnet.microsoft.com/download/dotnet/8.0)
 
-### Restore & Build
+### Clone & Build
 ```powershell
-# Restore NuGet dependencies
-dotnet restore
+# Clone the repository
+git clone https://github.com/your-username/ComicReader.git
+cd ComicReader
 
-# Build solution in Debug configuration
-dotnet build
+# Restore dependencies and build
+dotnet build -c Release -warnaserror
+
+# Run the application
+dotnet run -c Release
 ```
 
-### Run Application
+---
+
+## Publishing for Release
+
+To generate a standalone, optimized single-file executable for Windows x64:
+
 ```powershell
-dotnet run
+dotnet publish -c Release -r win-x64 --self-contained false -p:PublishSingleFile=true -o ./publish
 ```
 
+The output in `./publish` will include:
+- `ComicReader.exe` (with embedded application icon and metadata)
+- `appsettings.json` (clean default configuration)
+- `runtimes/win-x64/native/pdfium.dll` (PDFium rendering engine)
+
+---
+
+## License
+
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.

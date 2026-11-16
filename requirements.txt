@@ -1,6 +1,8 @@
 # ==============================================================================
-# ComicFlix - Application Requirements Specification
+# ComicReader - Application Requirements Specification
 # Target Framework: .NET 8.0 Windows Desktop (net8.0-windows)
+# Target Architecture: win-x64
+# Version: 1.0.0
 # ==============================================================================
 
 # ------------------------------------------------------------------------------
@@ -21,69 +23,72 @@ Microsoft.Extensions.DependencyInjection==8.0.0
 # Architecture:     x64
 # SDK / Runtime:    Microsoft .NET 8.0 SDK (8.0.100+) / Windows Desktop Runtime 8.0
 # RAM:              4 GB minimum (8 GB recommended for large graphic novels/PDFs)
-# Disk Space:       ~50 MB binary footprint + configurable local thumbnail cache (default: 1 GB)
+# Disk Space:       ~50 MB binary footprint + configurable local thumbnail cache (default: 1 GB in LocalAppData)
 # Display:          1280x720 minimum (1920x1080 or higher recommended)
+# DPI Support:      Per-Monitor DPI V2 Aware (Native WPF scaling)
 
 # ------------------------------------------------------------------------------
 # 3. Core Functional Requirements
 # ------------------------------------------------------------------------------
 
-# [FR-1] Recursive Directory Scanning
-#   - Accepts any local folder path selected via native Windows folder picker dialog.
-#   - Recursively traverses all subdirectories on background threads.
-#   - Emits real-time progress reporting without freezing the UI.
+# [FR-1] Hierarchical Folder Discovery & Polymorphic Grid
+#   - Scans directory contents to discover subfolders and supported comic files side-by-side.
+#   - Implements ILibraryNode interface polymorphically with FolderItemViewModel and ComicItemViewModel.
+#   - Provides drill-down folder navigation: clicking a folder navigates deeper, with breadcrumbs and "Back to Parent Folder".
+#   - Natural alphanumeric sorting via Windows StrCmpLogicalW (Folders first, then Files; Issue 1, Issue 2, Issue 10).
 
-# [FR-2] Supported File Formats
-#   - .cbr (Comic Book RAR archive)
-#   - .cbz (Comic Book ZIP archive)
-#   - .pdf (Portable Document Format)
-#   - Formats must be configurable via appsettings.json.
+# [FR-2] Dynamic Folder Cover Peeking
+#   - When scanning subfolders, recursively peeks inside to discover the first comic file (.cbr, .cbz, .pdf).
+#   - Extracts and displays the cover art as the folder card's thumbnail with a distinct blue "📁 FOLDER" badge and item count.
+#   - Gracefully displays a clean folder icon placeholder when a subfolder is empty or contains no readable comics.
 
-# [FR-3] Netflix-Style Category Rows
-#   - Root folder files group into the primary library shelf.
-#   - Nested subfolders map to horizontal category shelves reflecting relative path breadcrumbs.
-#   - Naturally sorts files and issues using Windows StrCmpLogicalW (Issue 1, Issue 2, Issue 10).
+# [FR-3] Supported Formats & Stream-Safe Archive Decoding
+#   - Supported Extensions: .cbz (Comic Book ZIP), .cbr (Comic Book RAR), .pdf (Portable Document Format).
+#   - CBZ & ZIP Extraction: Uses native System.IO.Compression with strict archive filtering (excludes directories, ComicInfo.xml, thumbs.db, and macOS __MACOSX metadata).
+#   - Stream Isolation: Non-seekable decompressor streams are copied to an isolated MemoryStream, rewound to Position = 0, decoded with BitmapCacheOption.OnLoad, and frozen via .Freeze().
+#   - PDF Rendering: Rasterized via DocLib (Docnet.Core / PDFium) using 1.5x scaling into thread-safe Bgra32 BitmapSource buffers.
 
-# [FR-4] Dynamic First-Page Cover Extraction
-#   - Archives (.cbr/.cbz): Extracts the first image entry sorted naturally.
-#   - PDFs: Rasterizes page 0 to BGRA pixels and encodes to optimized JPEG.
-#   - Scales thumbnails proportionally to a 360x540 bounding box (2:3 aspect ratio).
-#   - Handles missing or damaged archives gracefully with placeholder visuals.
+# [FR-4] Database-Free Reading Progress Tracking
+#   - Persists user reading positions and total page counts in %LocalAppData%\ComicReader\reading_progress.json.
+#   - Fast in-memory cache lookup (0ms) on startup and library rendering.
+#   - Thread-safe, 500ms debounced disk flushing with atomic temporary file renaming to prevent file corruption during rapid page turns.
+#   - Auto-Resume: Automatically navigates to the user's last-read page upon opening any comic.
 
-# [FR-5] SHA-256 Local Disk Caching
-#   - Caches extracted thumbnails to %LocalAppData%\ComicReader\Cache\Covers.
-#   - Cache key: SHA256(filePath.ToUpper() + lastModifiedTicks + fileSizeBytes).
-#   - Automatic cache invalidation when comic files are modified or replaced.
-#   - Atomic write-and-replace (.tmp -> .jpg) to prevent partial/corrupted thumbnail reads.
+# [FR-5] Visual Reading Progress Bar
+#   - Displays a slim, modern Netflix-style red progress bar (Height: 4px, Mode: OneWay) at the bottom edge of comic cards in the library grid.
+#   - Page count caching: Pre-caches total page count so archives do not need to be re-opened on subsequent app launches.
 
-# [FR-6] Full-Screen Comic Reader View
-#   - Seamless transition from poster card click to reader canvas.
-#   - Smooth page-turning slide animation using QuarticEase double animation.
-#   - High-quality bicubic/bilinear bitmap scaling (RenderOptions.BitmapScalingMode=HighQuality).
-#   - On-demand single-page decoding to conserve RAM.
+# [FR-6] Cinematic Frosted Glass Loading Screen
+#   - Displays a deliberate, premium loading overlay (~1.6 seconds) while parsing archives and buffering adjacent pages.
+#   - Frosted Glass Effect: Background features the comic cover art with a Gaussian Blur (Radius: 50) and a deep dark tint.
+#   - Modern Loading Animation: Outer 360-degree sweeping accent ring with an inner pulsing breathing pod.
+#   - Smooth Fade-Out: Storyboard DoubleAnimation transitions opacity to 0.0 over 450ms with CubicEase upon buffer readiness.
 
-# [FR-7] Sizing Modes & Zooming
-#   - FitToScreen: Uniformly fits entire page into the current viewport.
-#   - FitToWidth:  Scales to window width with smooth vertical scrolling for webtoons.
-#   - FitToHeight: Scales to window height.
-#   - OriginalSize: 1:1 pixel rendering with horizontal and vertical panning.
-#   - Zoom controls from 50% to 300%.
+# [FR-7] Immersive Full-Screen Reader Layout & Auto-Hiding Controls
+#   - Borderless full-window comic viewing viewport centered on a pure black (#000000) canvas.
+#   - Auto-Hide via Opacity: Floating top header and bottom scrubber panels default to Opacity = 0.0.
+#   - Responsive Hover Zones: Invisible hit-testable trigger zones (Top: 60px, Bottom: 90px) fade controls in over 200ms on mouse enter, and fade out over 250ms on mouse leave.
+#   - Hit-Testing Integrity: Center comic reading canvas and left/right click-to-turn zones (◀ and ▶) remain unobstructed.
 
-# [FR-8] Controls & Hotkeys
-#   - Next Page:      Right Arrow, Space, PageDown, or Right-edge screen click
-#   - Previous Page:  Left Arrow, Shift+Space, PageUp, Backspace, or Left-edge screen click
-#   - First / Last:   Home / End keys
-#   - Exit Reader:    Escape key or "Back to Library" button
-#   - Toggle Overlay: 'H' key or center screen click
-#   - Scrubbing:      Interactive slider for jumping directly to any page
+# [FR-8] Multi-Axis Scrolling & Mouse Drag Panning
+#   - Multi-Axis ScrollViewer: Configured with HorizontalScrollBarVisibility = Auto and VerticalScrollBarVisibility = Auto.
+#   - LayoutTransform Zoom Scaling: Uses Border.LayoutTransform for ZoomFactor scaling so layout extents expand properly for horizontal scrolling.
+#   - Page Transition Scroll Reset: Automatically snaps horizontal and vertical scroll offsets back to top-left (0, 0) on every page turn (eliminating "Sticky Scroll").
+#   - Click-and-Drag Panning: Users can click and drag anywhere on zoomed-in pages with cursor feedback (Hand / SizeAll).
+#   - Mouse Wheel Navigation: Supports Ctrl + MouseWheel for zooming and Shift + MouseWheel for horizontal panning.
 
-# ------------------------------------------------------------------------------
-# 4. Non-Functional Requirements
-# ------------------------------------------------------------------------------
-# - 100% Offline / Local-First: Zero remote network calls, telemetry, or external services.
-# - UI Fluidity: 60 FPS UI rendering; parallel background thumbnail extraction throttled by SemaphoreSlim.
-# - Memory Management: Immediate disposal of unmanaged PDFium handles (IDocReader) and archive streams upon reader close.
-# - Thread Safety: Decoded BitmapImages are frozen (.Freeze()) for cross-thread binding safety.
-# - Config-Driven: Zero hardcoded paths, colors, or extensions; all loaded from appsettings.json.
-# - Netflix Theme: Dark aesthetic (#141414 background, #E50914 Netflix red accent, custom slim scrollbars).
+# [FR-9] Page Scrubber with Drag-Completed Trigger
+#   - Bounded Slider: Locked to strict 1-based page numbers [1, TotalPages], preventing out-of-bounds displays ("38 / 37").
+#   - Live Feedback: Scrubber counter updates in real time while dragging without invoking heavy image decodes.
+#   - Drag-Completed Commit: Page decode fires only upon Thumb.DragCompleted, track click (PreviewMouseLeftButtonUp), or key release (PreviewKeyUp).
+#   - Immediate Source Clearing: Instantly clears the screen to black while the target page extracts asynchronously.
 
+# [FR-10] Seamless Dark Window Chrome
+#   - Client area extends seamlessly into the title bar via WindowChrome (CaptionHeight: 32px).
+#   - Title text and window icon hidden from client area; styled dark native caption buttons.
+#   - Branded Application Icon (Assets/app.ico) compiled into executable metadata for Taskbar and File Explorer.
+
+# [FR-11] Layered Configuration Architecture
+#   - App-level defaults read from appsettings.json (distributed with clean empty DefaultLibraryPath).
+#   - User-specific folder choices and overrides persisted to %LocalAppData%\ComicReader\usersettings.json.
+#   - Unhandled exception crash logs written safely to %LocalAppData%\ComicReader\Logs\crash.log.

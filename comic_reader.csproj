@@ -14,8 +14,8 @@
     <FileVersion>1.0.0.0</FileVersion>
     <Product>ComicReader</Product>
     <Description>Fast, modern, local-first comic (.cbz, .cbr) and PDF desktop reader.</Description>
-    <!-- Suppress advisory warning for SharpCompress path-traversal (not applicable: our code reads streams in-memory only) -->
-    <NoWarn>$(NoWarn);NU1902</NoWarn>
+    <!-- Suppress advisory warnings when offline or for SharpCompress path-traversal -->
+    <NoWarn>$(NoWarn);NU1902;NU1900</NoWarn>
   </PropertyGroup>
 
   <ItemGroup>
