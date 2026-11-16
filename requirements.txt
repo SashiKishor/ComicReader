@@ -1,0 +1,89 @@
+# ==============================================================================
+# ComicFlix - Application Requirements Specification
+# Target Framework: .NET 8.0 Windows Desktop (net8.0-windows)
+# ==============================================================================
+
+# ------------------------------------------------------------------------------
+# 1. NuGet Package Dependencies
+# ------------------------------------------------------------------------------
+CommunityToolkit.Mvvm==8.4.0
+Docnet.Core==2.6.0
+SharpCompress==0.39.0
+Microsoft.Extensions.Configuration==8.0.0
+Microsoft.Extensions.Configuration.Binder==8.0.2
+Microsoft.Extensions.Configuration.Json==8.0.0
+Microsoft.Extensions.DependencyInjection==8.0.0
+
+# ------------------------------------------------------------------------------
+# 2. Platform & System Prerequisites
+# ------------------------------------------------------------------------------
+# Operating System: Windows 10 (Version 2004 / Build 19041+) or Windows 11 (64-bit)
+# Architecture:     x64
+# SDK / Runtime:    Microsoft .NET 8.0 SDK (8.0.100+) / Windows Desktop Runtime 8.0
+# RAM:              4 GB minimum (8 GB recommended for large graphic novels/PDFs)
+# Disk Space:       ~50 MB binary footprint + configurable local thumbnail cache (default: 1 GB)
+# Display:          1280x720 minimum (1920x1080 or higher recommended)
+
+# ------------------------------------------------------------------------------
+# 3. Core Functional Requirements
+# ------------------------------------------------------------------------------
+
+# [FR-1] Recursive Directory Scanning
+#   - Accepts any local folder path selected via native Windows folder picker dialog.
+#   - Recursively traverses all subdirectories on background threads.
+#   - Emits real-time progress reporting without freezing the UI.
+
+# [FR-2] Supported File Formats
+#   - .cbr (Comic Book RAR archive)
+#   - .cbz (Comic Book ZIP archive)
+#   - .pdf (Portable Document Format)
+#   - Formats must be configurable via appsettings.json.
+
+# [FR-3] Netflix-Style Category Rows
+#   - Root folder files group into the primary library shelf.
+#   - Nested subfolders map to horizontal category shelves reflecting relative path breadcrumbs.
+#   - Naturally sorts files and issues using Windows StrCmpLogicalW (Issue 1, Issue 2, Issue 10).
+
+# [FR-4] Dynamic First-Page Cover Extraction
+#   - Archives (.cbr/.cbz): Extracts the first image entry sorted naturally.
+#   - PDFs: Rasterizes page 0 to BGRA pixels and encodes to optimized JPEG.
+#   - Scales thumbnails proportionally to a 360x540 bounding box (2:3 aspect ratio).
+#   - Handles missing or damaged archives gracefully with placeholder visuals.
+
+# [FR-5] SHA-256 Local Disk Caching
+#   - Caches extracted thumbnails to %LocalAppData%\ComicReader\Cache\Covers.
+#   - Cache key: SHA256(filePath.ToUpper() + lastModifiedTicks + fileSizeBytes).
+#   - Automatic cache invalidation when comic files are modified or replaced.
+#   - Atomic write-and-replace (.tmp -> .jpg) to prevent partial/corrupted thumbnail reads.
+
+# [FR-6] Full-Screen Comic Reader View
+#   - Seamless transition from poster card click to reader canvas.
+#   - Smooth page-turning slide animation using QuarticEase double animation.
+#   - High-quality bicubic/bilinear bitmap scaling (RenderOptions.BitmapScalingMode=HighQuality).
+#   - On-demand single-page decoding to conserve RAM.
+
+# [FR-7] Sizing Modes & Zooming
+#   - FitToScreen: Uniformly fits entire page into the current viewport.
+#   - FitToWidth:  Scales to window width with smooth vertical scrolling for webtoons.
+#   - FitToHeight: Scales to window height.
+#   - OriginalSize: 1:1 pixel rendering with horizontal and vertical panning.
+#   - Zoom controls from 50% to 300%.
+
+# [FR-8] Controls & Hotkeys
+#   - Next Page:      Right Arrow, Space, PageDown, or Right-edge screen click
+#   - Previous Page:  Left Arrow, Shift+Space, PageUp, Backspace, or Left-edge screen click
+#   - First / Last:   Home / End keys
+#   - Exit Reader:    Escape key or "Back to Library" button
+#   - Toggle Overlay: 'H' key or center screen click
+#   - Scrubbing:      Interactive slider for jumping directly to any page
+
+# ------------------------------------------------------------------------------
+# 4. Non-Functional Requirements
+# ------------------------------------------------------------------------------
+# - 100% Offline / Local-First: Zero remote network calls, telemetry, or external services.
+# - UI Fluidity: 60 FPS UI rendering; parallel background thumbnail extraction throttled by SemaphoreSlim.
+# - Memory Management: Immediate disposal of unmanaged PDFium handles (IDocReader) and archive streams upon reader close.
+# - Thread Safety: Decoded BitmapImages are frozen (.Freeze()) for cross-thread binding safety.
+# - Config-Driven: Zero hardcoded paths, colors, or extensions; all loaded from appsettings.json.
+# - Netflix Theme: Dark aesthetic (#141414 background, #E50914 Netflix red accent, custom slim scrollbars).
+
