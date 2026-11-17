@@ -46,6 +46,58 @@ public partial class LibraryViewModel : ObservableObject
     [ObservableProperty]
     private string _searchFilter = string.Empty;
 
+    private bool _isSettingsOpen;
+    public bool IsSettingsOpen
+    {
+        get => _isSettingsOpen;
+        set => SetProperty(ref _isSettingsOpen, value);
+    }
+
+    public IReadOnlyList<PageFitMode> AvailableFitModes { get; } = Enum.GetValues<PageFitMode>();
+    public IReadOnlyList<double> AvailableZoomLevels { get; } = [0.5, 0.75, 1.0, 1.25, 1.5, 1.75, 2.0, 2.5, 3.0];
+
+    public PageFitMode DefaultFitMode
+    {
+        get => _configService.Settings.Reader.DefaultFitMode;
+        set
+        {
+            if (_configService.Settings.Reader.DefaultFitMode != value)
+            {
+                _configService.Settings.Reader.DefaultFitMode = value;
+                _configService.SaveSettings();
+                OnPropertyChanged();
+            }
+        }
+    }
+
+    public double DefaultZoomFactor
+    {
+        get => _configService.Settings.Reader.DefaultZoomFactor > 0 ? _configService.Settings.Reader.DefaultZoomFactor : 1.0;
+        set
+        {
+            if (Math.Abs(_configService.Settings.Reader.DefaultZoomFactor - value) > 0.001)
+            {
+                _configService.Settings.Reader.DefaultZoomFactor = value;
+                _configService.SaveSettings();
+                OnPropertyChanged();
+            }
+        }
+    }
+
+    [RelayCommand]
+    public void OpenSettings()
+    {
+        OnPropertyChanged(nameof(DefaultFitMode));
+        OnPropertyChanged(nameof(DefaultZoomFactor));
+        IsSettingsOpen = true;
+    }
+
+    [RelayCommand]
+    public void CloseSettings()
+    {
+        IsSettingsOpen = false;
+    }
+
     public string CurrentFolderName =>
         string.IsNullOrWhiteSpace(CurrentDirectory)
             ? "Library"

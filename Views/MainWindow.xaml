@@ -13,6 +13,7 @@
         Width="1280"
         MinHeight="600"
         MinWidth="900"
+        WindowState="Maximized"
         WindowStartupLocation="CenterScreen"
         Background="{StaticResource BrushBgPrimary}">
 

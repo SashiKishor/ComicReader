@@ -76,7 +76,11 @@ public sealed class ConfigurationService : IConfigurationService
     public void SaveRootDirectory(string path)
     {
         _settings.Library.DefaultLibraryPath = path;
+        SaveSettings();
+    }
 
+    public void SaveSettings()
+    {
         try
         {
             var options = new JsonSerializerOptions { WriteIndented = true };

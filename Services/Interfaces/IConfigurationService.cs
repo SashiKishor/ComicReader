@@ -10,5 +10,6 @@ public interface IConfigurationService
     AppSettings Settings { get; }
     string? GetRootDirectory();
     void SaveRootDirectory(string path);
+    void SaveSettings();
     void Reload();
 }

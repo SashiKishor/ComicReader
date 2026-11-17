@@ -71,12 +71,88 @@ public partial class ReaderViewModel : ObservableObject
     [ObservableProperty]
     private int _animationDurationMs = 250;
 
+    private bool _isSettingsOpen;
+    public bool IsSettingsOpen
+    {
+        get => _isSettingsOpen;
+        set => SetProperty(ref _isSettingsOpen, value);
+    }
+
+    [RelayCommand]
+    public void OpenSettings()
+    {
+        OnPropertyChanged(nameof(DefaultFitMode));
+        OnPropertyChanged(nameof(DefaultZoomFactor));
+        IsSettingsOpen = true;
+    }
+
+    [RelayCommand]
+    public void CloseSettings()
+    {
+        IsSettingsOpen = false;
+    }
+
     public int MaxPageNumber => TotalPages > 0 ? TotalPages : 1;
     public string Title => CurrentComic?.Title ?? "Comic Reader";
     public int CurrentPageNumber => TotalPages > 0 ? CurrentPageIndex + 1 : 0;
     public string PageCounterText => TotalPages > 0 ? $"{ScrubberPageNumber} / {TotalPages}" : "0 / 0";
     public bool CanGoNext => CurrentPageIndex < TotalPages - 1;
     public bool CanGoPrevious => CurrentPageIndex > 0;
+
+    /// <summary>
+    /// Gets the list of available page fit modes for UI bindings.
+    /// </summary>
+    public IReadOnlyList<PageFitMode> AvailableFitModes { get; } = Enum.GetValues<PageFitMode>();
+
+    /// <summary>
+    /// Gets the list of available zoom levels for UI bindings.
+    /// </summary>
+    public IReadOnlyList<double> AvailableZoomLevels { get; } = [0.5, 0.75, 1.0, 1.25, 1.5, 1.75, 2.0, 2.5, 3.0];
+
+    /// <summary>
+    /// User-configured default fit mode applied when opening any comic.
+    /// Persisted to user configuration and instantly applied to active reading view.
+    /// </summary>
+    public PageFitMode DefaultFitMode
+    {
+        get => _configurationService.Settings.Reader.DefaultFitMode;
+        set
+        {
+            if (_configurationService.Settings.Reader.DefaultFitMode != value)
+            {
+                _configurationService.Settings.Reader.DefaultFitMode = value;
+                _configurationService.SaveSettings();
+                OnPropertyChanged();
+
+                // Instantly apply preference to the active viewport if a comic is open
+                SetFitMode(value);
+            }
+        }
+    }
+
+    /// <summary>
+    /// User-configured default zoom factor applied when opening any comic.
+    /// Persisted to user configuration and instantly applied to active reading view.
+    /// </summary>
+    public double DefaultZoomFactor
+    {
+        get => _configurationService.Settings.Reader.DefaultZoomFactor > 0 ? _configurationService.Settings.Reader.DefaultZoomFactor : 1.0;
+        set
+        {
+            if (Math.Abs(_configurationService.Settings.Reader.DefaultZoomFactor - value) > 0.001)
+            {
+                _configurationService.Settings.Reader.DefaultZoomFactor = value;
+                _configurationService.SaveSettings();
+                OnPropertyChanged();
+
+                // Instantly apply zoom to the active viewport if a comic is open
+                if (CurrentComic != null)
+                {
+                    ZoomFactor = value;
+                }
+            }
+        }
+    }
 
     partial void OnCurrentPageIndexChanged(int value)
     {
@@ -104,11 +180,8 @@ public partial class ReaderViewModel : ObservableObject
 
         var readerSettings = _configurationService.Settings.Reader;
         AnimationDurationMs = readerSettings.PageAnimationDurationMs;
-
-        if (Enum.TryParse<PageFitMode>(readerSettings.DefaultFitMode, true, out var parsedMode))
-        {
-            FitMode = parsedMode;
-        }
+        FitMode = readerSettings.DefaultFitMode;
+        ZoomFactor = readerSettings.DefaultZoomFactor > 0 ? readerSettings.DefaultZoomFactor : 1.0;
     }
 
     /// <summary>
@@ -121,8 +194,13 @@ public partial class ReaderViewModel : ObservableObject
         CurrentPageIndex = 0;
         TotalPages = 0;
         CurrentPageImage = null;
-        ZoomFactor = 1.0;
+        ZoomFactor = _configurationService.Settings.Reader.DefaultZoomFactor > 0
+            ? _configurationService.Settings.Reader.DefaultZoomFactor
+            : 1.0;
         _pageCache.Clear();
+
+        // Read DefaultFitMode from configuration and apply before first page renders
+        FitMode = _configurationService.Settings.Reader.DefaultFitMode;
 
         IsLoadingDocument = true;
         LoadingProgressText = "Opening document...";
@@ -407,6 +485,12 @@ public partial class ReaderViewModel : ObservableObject
     {
         FitMode = mode;
         ZoomFactor = 1.0;
+    }
+
+    [RelayCommand]
+    public void UpdateDefaultFitMode(PageFitMode mode)
+    {
+        DefaultFitMode = mode;
     }
 
     [RelayCommand]

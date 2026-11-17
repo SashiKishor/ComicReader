@@ -297,12 +297,33 @@ public partial class ReaderView : UserControl
         PageContentHost.BeginAnimation(UIElement.OpacityProperty, fadeAnimation);
     }
 
-    private void UserControl_KeyDown(object sender, KeyEventArgs e)
+    private const double ScrollStep = 48.0;
+
+    private void UserControl_PreviewKeyDown(object sender, KeyEventArgs e)
     {
         if (DataContext is not ReaderViewModel vm) return;
 
         switch (e.Key)
         {
+            // Vertical Keyboard Scrolling (Fit Width / Zoomed Pages)
+            case Key.Up:
+                if (PageScrollViewer.VerticalOffset > 0)
+                {
+                    var targetOffset = Math.Max(0, PageScrollViewer.VerticalOffset - ScrollStep);
+                    PageScrollViewer.ScrollToVerticalOffset(targetOffset);
+                }
+                e.Handled = true;
+                break;
+
+            case Key.Down:
+                if (PageScrollViewer.VerticalOffset < PageScrollViewer.ScrollableHeight)
+                {
+                    var targetOffset = Math.Min(PageScrollViewer.ScrollableHeight, PageScrollViewer.VerticalOffset + ScrollStep);
+                    PageScrollViewer.ScrollToVerticalOffset(targetOffset);
+                }
+                e.Handled = true;
+                break;
+
             case Key.Right:
             case Key.PageDown:
             case Key.Space when (Keyboard.Modifiers & ModifierKeys.Shift) == 0:
